@@ -19,8 +19,6 @@ class E3631A:
         self.send("*RST")
         self.send("*CLS")
 
-
-
     def send(self, command):
         self.ser.write(command + self.lf)
 
@@ -31,6 +29,15 @@ class E3631A:
     def setVoltageN25(self, volt):
         self.send("INST N25V")
         self.send("VOLT -%.1f"%(volt))
+
+    def setVoltageCurrentP25(self, volt, current):
+        self.send("APPL P25V, %.2f, %.3f;"%(volt,current))
+
+    def setVoltageCurrentP6(self, volt, current):
+        self.send("APPL P6V, %.3f, %.3f;"%(volt,current))
+
+    def setVoltageCurrentN25(self, volt, current):
+        self.send("APPL N25V, -%.3f, %.3f;"%(volt,current))
 
     def outputOn(self):
         self.send("OUTP ON")
