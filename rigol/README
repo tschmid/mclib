@@ -1,0 +1,6 @@
+This class can control a Rigol DS1052E Oscilloscope from Linux. It uses the
+Linux Kernel USBTMC device driver. Once the scope is connected to the USB
+port, it will show up as /dev/usbtmc0.
+
+For more commands, see the "Rigol Programming Guide DS1000E, DS1000D Series
+Digital Oscilloscope".
