@@ -1,10 +1,12 @@
 import os
+import sys
 import numpy
+import time
 
 class usbtmc:
     """Simple implementation of a USBTMC device driver, in the style of visa.h"""
 
-    DEBUG = True
+    DEBUG = False
 
     def __init__(self, device):
         self.device = device
@@ -16,6 +18,7 @@ class usbtmc:
         if self.DEBUG:
             print "DEBUG(write): *%s*"%command
         os.write(self.FILE, command)
+        #time.sleep(0.25)
 
     def read(self, length = 4000):
         s = os.read(self.FILE, length)
@@ -26,7 +29,7 @@ class usbtmc:
     def readline(self):
         """ To read one command, just read a lot. the read command will only
         return as much as can be read from the device. """
-        return self.read(40000)
+        return self.read(2097152)
 
 class RigolScope:
     """Class to control a Rigol DS1000 series oscilloscope"""
@@ -70,18 +73,33 @@ class RigolScope:
         else:
             return False
 
-    def getData(self, channel):
+    def getData(self, channel, maximum=False):
         if not self.validChannel(channel):
             # not a valid channel
             return ""
         if self.isChannelOn(channel):
             # get the data
-            self.meas.write(":WAV:POIN:MODE NOR")
-            self.meas.write(":WAV:DATA? %s"%channel)
-            r = self.meas.readline()
-            # the first 10 bytes are something I don't know... maybe
+            if maximum:
+                self.meas.write(":WAV:POIN:MODE RAW")
+                self.meas.write(":WAV:DATA? %s"%channel)
+                r = self.meas.read(10)
+                # find out how many datapoints we have to read
+                l = int(r[2:]) # first character is #, then number of bits (8) then number of samples
+                r = ""
+                i = 0
+                while i < l:
+                    c = self.meas.read(1024)
+                    #print i
+                    #sys.stdout.flush()
+                    i += 1024
+                    r += "%s"%c
+            else:
+                self.meas.write(":WAV:POIN:MODE NOR")
+                self.meas.write(":WAV:DATA? %s"%channel)
+                r = self.meas.readline()
+                # the first 10 bytes are something I don't know... maybe
+                r = r[10:]
             # #bitresnumsamples?
-            r = r[10:]
             data = numpy.frombuffer(r, 'B')
 
 
@@ -107,6 +125,7 @@ class RigolScope:
             # scale to
             # get the actual voltage.
             data = (data - 130.0 - voltoffset/voltscale*25) / 25 * voltscale
+            #data *= voltscale
 
             # get the timescale
             self.meas.write(":TIM:SCAL?")
@@ -114,18 +133,28 @@ class RigolScope:
 
             # get the timescale offset
             self.meas.write(":TIM:OFFS?")
-            timeoffset = float(self.meas.readline())
+            r = (self.meas.readline())
+            rate = float(r)
 
             # Now, generate a time axis.  The scope display range is 0-600,
             # with 300 being
             # time zero.
-            time = numpy.arange(-300.0/50*timescale, 300.0/50*timescale,
-                    timescale/50.0)
+            #time = numpy.arange(-300.0/50*timescale, 300.0/50*timescale,
+            #        timescale/50.0)
+            # there are 50 points per division
+            time = numpy.arange(-l/2*timescale/50, l/2*timescale/50,
+                    timescale/50)
+
+            # get the sampling rate
+            self.meas.write(":ACQ:SAMP? %s"%channel)
+            r = (self.meas.readline())
+            rate = float(r)
+            time = numpy.arange(-l/2*1/rate, l/2*1/rate, 1/rate)
 
             # If we generated too many points due to overflow, crop the length
             # of time.
             if (time.size > data.size):
-                time = time[0:600:1]
+                time = time[0:data.size]
             # See if we should use a different time axis
             #if (time[599] < 1e-3):
             #    time = time * 1e6
@@ -149,6 +178,22 @@ class RigolScope:
 
     def getDataMath(self):
         return self.getData("MATH")
+
+    def getCounter(self):
+        """ Returns the value of the counter in Hz. """
+        self.meas.write(":COUNTER:VALUE?")
+        r = self.meas.readline()
+        return float(r)
+
+    def getFrequency(self, channel):
+        """ Measures the frequency of the given channel. The return value is
+        in Hz."""
+        if not self.validChannel(channel):
+            return None
+        if self.isChannelOn(channel):
+            self.meas.write(":MEAS:FREQ? %s"%channel)
+            r = self.meas.readline()
+            return float(r)
 
     def local(self):
         self.meas.write(":KEY:FORC")
